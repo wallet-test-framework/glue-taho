@@ -105,16 +105,7 @@ class TahoDriver {
     }
 
     public async unlockWithPassword(driver: WebDriver): Promise<void> {
-        const inputs = await driver.findElements(
-            By.css("[data-testid='unlock-with-password']"),
-        );
-        if (inputs.length <= 0) {
-            return;
-        }
-
-        await driver.wait(until.elementIsVisible(inputs[0]), 2000);
-        await inputs[0].sendKeys(TahoDriver.PASSWORD + "\n");
-        await delay(1000);
+        //TODO: type password if wallet is locked
     }
 
     private async emitRequestAccounts(
@@ -194,11 +185,11 @@ class TahoDriver {
 
         const location = await driver.getCurrentUrl();
         const url = new URL(location);
-        const action = url.searchParams.get("action");
+        const action = url.searchParams.get("page");
 
         let title;
         switch (action) {
-            case "requestEthereumAccounts":
+            case "/dapp-permission":
                 await this.emitRequestAccounts(driver, handle);
                 break;
             case "signEthereumTransaction":
@@ -282,7 +273,7 @@ class TahoDriver {
 
     public async setup(): Promise<void> {
         await this.driver.lock(async (driver) => {
-            const extensionUrl = await driver.wait(async () => {
+            let extensionUrl = await driver.wait(async () => {
                 const handles = await driver.getAllWindowHandles();
                 for (const handle of handles) {
                     await driver.switchTo().window(handle);
@@ -296,7 +287,12 @@ class TahoDriver {
             if (!extensionUrl) {
                 throw new Error("Failed to find extension window.");
             }
-            this.extensionUrl = extensionUrl;
+            extensionUrl = extensionUrl.substring(0, extensionUrl.indexOf("#"));
+            extensionUrl = extensionUrl.substring(
+                0,
+                extensionUrl.lastIndexOf("/"),
+            );
+            this.extensionUrl = extensionUrl + "/popup.html";
 
             const importExisting = await driver.findElement(
                 By.css("#existingWallet"),
@@ -304,15 +300,11 @@ class TahoDriver {
             await driver.wait(until.elementIsVisible(importExisting), 2000);
             await importExisting.click();
 
-            const byPhrase = await driver.findElement(
-                By.css("#importSeed"),
-            );
+            const byPhrase = await driver.findElement(By.css("#importSeed"));
             await driver.wait(until.elementIsVisible(byPhrase), 2000);
             await byPhrase.click();
 
-            const setPassword = await driver.findElement(
-                By.css("#password"),
-            );
+            const setPassword = await driver.findElement(By.css("#password"));
             await driver.wait(until.elementIsVisible(setPassword), 2000);
             await setPassword.click();
             await setPassword.sendKeys(TahoDriver.PASSWORD);
@@ -337,15 +329,11 @@ class TahoDriver {
                 "basket cradle actor pizza similar liar suffer another all fade flag brave",
             );
 
-            const importWallet = await driver.findElement(
-                By.css("#import"),
-            );
+            const importWallet = await driver.findElement(By.css("#import"));
             await driver.wait(until.elementIsVisible(importWallet), 2000);
             await importWallet.click();
 
-            const anim = await driver.findElement(
-                By.css("[src$='.gif']"),
-            );
+            const anim = await driver.findElement(By.css("[src$='.gif']"));
             await driver.wait(until.elementIsVisible(anim), 2000);
 
             await driver.close();
@@ -377,11 +365,7 @@ export class TahoGlue extends Glue {
         browserVersion: string | null | undefined,
     ) {
         super();
-        this.driver = TahoGlue.buildDriver(
-            this,
-            extensionPath,
-            browserVersion,
-        );
+        this.driver = TahoGlue.buildDriver(this, extensionPath, browserVersion);
     }
 
     async launch(url: string): Promise<void> {
@@ -398,71 +382,54 @@ export class TahoGlue extends Glue {
     override async activateChain(action: ActivateChain): Promise<void> {
         const cb = await this.driver;
         await cb.lock(async (driver) => {
-            if (!cb.extensionUrl) {
-                throw new Error("Setup not complete.")
-            }
             const current = await driver.getWindowHandle();
             await driver.switchTo().newWindow("window");
-            await driver.navigate().to(cb.extensionUrl);
-            await cb.unlockWithPassword(driver);
+            await driver.navigate().to("https://chainlist.org/");
+            const chainListWindow = await driver.getWindowHandle();
+            const openWindows = await driver.getAllWindowHandles();
 
-            const settingsLink = await driver.findElement(
-                By.css("[data-testid='settings-navigation-link']"),
+            await driver.executeScript(
+                `ethereum.request({method:"eth_requestAccounts"});`,
             );
-            await driver.wait(until.elementIsVisible(settingsLink), 2000);
-            await settingsLink.click();
-
-            const networksMenu = await driver.findElement(
-                By.css("[data-testid='network-setting-cell-pressable']"),
-            );
-            await driver.wait(until.elementIsVisible(networksMenu), 2000);
-            await networksMenu.click();
-
-            const addCustom = await driver.findElement(
-                By.css("[data-testid='add-custom-network']"),
-            );
-            await driver.wait(until.elementIsVisible(addCustom), 2000);
-            await delay(1000);
-            const windowsBefore = await driver.getAllWindowHandles();
-            await addCustom.click();
-
-            const newWindow = await driver.wait(async () => {
+            const popupWindow = await driver.wait(async () => {
                 const handles = await driver.getAllWindowHandles();
-                const newWindows = handles.filter(
-                    (x) => !windowsBefore.includes(x),
+                const newHandles = handles.filter(
+                    (x) => !openWindows.includes(x),
                 );
-                return newWindows.length > 0 ? newWindows[0] : false;
-            }, 10000);
+                return newHandles[0];
+            });
+            openWindows.push(popupWindow);
 
-            if (!newWindow) {
-                throw new Error("custom testnet window disappeared");
-            }
-            console.debug("Switching to custom network window", newWindow);
-            await driver.switchTo().window(newWindow);
-            await cb.unlockWithPassword(driver);
+            await driver.switchTo().window(popupWindow);
 
-            const name = await driver.findElement(
-                By.css("[data-testid='custom-network-name-input']"),
+            const btn = await driver.findElement(By.css("#close"));
+            await driver.wait(until.elementIsVisible(btn), 2000);
+            await btn.click();
+
+            const btn2 = await driver.findElement(By.css("#grantPermission"));
+            await driver.wait(until.elementIsVisible(btn2), 2000);
+            await btn2.click();
+
+            await driver.switchTo().window(chainListWindow);
+            await driver.executeScript(
+                `ethereum.request({"method":"wallet_addEthereumChain","params":[{"chainId":"${action.chainId}","chainName":"BNB Chain LlamaNodes","nativeCurrency":{"name":"BNB Chain Native Token","symbol":"BNB","decimals":18},"rpcUrls":["${action.rpcUrl}"],"blockExplorerUrls":["https://bscscan.com"]},"0xb7b4d68047536a87f0926a76dd0b96b3a044c8cf","Chainlist"]});`,
             );
-            await driver.wait(until.elementIsVisible(name), 2000);
-            await name.sendKeys(`Test Chain ${action.chainId}`);
 
-            const rpcUrl = await driver.findElement(
-                By.css("[data-testid='custom-network-rpc-url-input']"),
-            );
-            await driver.wait(until.elementIsVisible(rpcUrl), 2000);
-            await rpcUrl.sendKeys(action.rpcUrl);
+            const addChainWindow = await driver.wait(async () => {
+                const handles = await driver.getAllWindowHandles();
+                const newHandles = handles.filter(
+                    (x) => !openWindows.includes(x),
+                );
+                return newHandles[0];
+            });
+            await driver.switchTo().window(addChainWindow);
 
-            const chainId = await driver.findElement(
-                By.css("[data-testid='custom-network-chain-id-input']"),
-            );
-            await driver.wait(until.elementIsVisible(chainId), 2000);
-            await chainId.sendKeys(action.chainId);
+            const btn3 = await driver.findElement(By.css("#addNewChain"));
+            await driver.wait(until.elementIsVisible(btn3), 2000);
+            await btn3.click();
 
-            const save = await driver.findElement(
-                By.css("[data-testid='custom-network-save']:not([disabled])"),
-            );
-            await save.click();
+            await driver.switchTo().window(chainListWindow);
+            await driver.close();
 
             await driver.switchTo().window(current);
         });
@@ -478,10 +445,10 @@ export class TahoGlue extends Glue {
 
                 switch (action.action) {
                     case "approve":
-                        testid = "allow-authorize-button";
+                        testid = "grantPermission";
                         break;
                     case "reject":
-                        testid = "deny-authorize-button";
+                        testid = "denyPermission";
                         break;
                     default:
                         throw new Error(
@@ -490,7 +457,7 @@ export class TahoGlue extends Glue {
                 }
 
                 const btn = await driver.findElement(
-                    By.css(`[data-testid='${testid}']:not([disabled])`),
+                    By.css(`#${testid}:not([disabled])`),
                 );
                 await driver.wait(until.elementIsVisible(btn), 2000);
                 await btn.click();
