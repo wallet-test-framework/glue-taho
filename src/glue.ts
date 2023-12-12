@@ -10,11 +10,14 @@ import {
     SignMessage,
     SignMessageEvent,
     SignTransaction,
+    SignTransactionEvent,
     SwitchEthereumChain,
 } from "@wallet-test-framework/glue";
+import { send } from "node:process";
 import { URL } from "node:url";
 import { Builder, By, WebDriver, until } from "selenium-webdriver";
 import Chrome from "selenium-webdriver/chrome.js";
+import { sendRequest } from "selenium-webdriver/http.js";
 import { NoSuchWindowError } from "selenium-webdriver/lib/error.js";
 
 function delay(ms: number): Promise<void> {
@@ -131,23 +134,58 @@ class TahoDriver {
         await this.unlockWithPassword(driver);
 
         const addressDetails = await driver.findElement(
-            By.css("[data-testid='address-details']"),
+            By.css("#recipientAddress"),
         );
-        const toAddress = await addressDetails.getText();
-        const signingAddress = await driver.findElement(
-            By.css("[data-testid='signing-address'] span"),
+        const addressTitle = await addressDetails.getAttribute("title");
+        const toAddress = addressTitle
+            .substring(addressTitle.indexOf(":") + 1)
+            .trim();
+        const senderInfo = await driver.findElement(
+            By.css(".account_info_label"),
         );
-        const fromAddress = await signingAddress.getText();
-        const undefinedDetails = await driver.findElement(
-            By.css("[data-testid='undefined-details']"),
-        );
-        const textCost = await undefinedDetails.getText();
-        const cost = /[0-9]+(.[0-9]+)?(?= ETH)/.exec(textCost)?.[0] || "";
+        const fromAddress = await senderInfo.getAttribute("title");
+        const spendAmount = await driver.findElement(By.css(".spend_amount"));
+        const textCost = await spendAmount.getText();
+        const cost = /[0-9]+(.[0-9]+)?(?= BNB)/.exec(textCost)?.[0] || "";
         const parsedCost = parseUnits(cost, 18);
 
         this.glue.emit(
             "sendtransaction",
             new SendTransactionEvent(handle, {
+                from: fromAddress,
+                to: toAddress,
+                data: "",
+                value: parsedCost.toString(),
+            }),
+        );
+    }
+
+    private async emitSignTransaction(
+        driver: WebDriver,
+        handle: string,
+    ): Promise<void> {
+        console.debug("emitting signtransaction");
+        await this.unlockWithPassword(driver);
+
+        const addressDetails = await driver.findElement(
+            By.css("#recipientAddress"),
+        );
+        const addressTitle = await addressDetails.getAttribute("title");
+        const toAddress = addressTitle
+            .substring(addressTitle.indexOf(":") + 1)
+            .trim();
+        const senderInfo = await driver.findElement(
+            By.css(".account_info_label"),
+        );
+        const fromAddress = await senderInfo.getAttribute("title");
+        const spendAmount = await driver.findElement(By.css(".spend_amount"));
+        const textCost = await spendAmount.getText();
+        const cost = /[0-9]+(.[0-9]+)?(?= BNB)/.exec(textCost)?.[0] || "";
+        const parsedCost = parseUnits(cost, 18);
+
+        this.glue.emit(
+            "signtransaction",
+            new SignTransactionEvent(handle, {
                 from: fromAddress,
                 to: toAddress,
                 data: "",
@@ -192,8 +230,10 @@ class TahoDriver {
             case "/dapp-permission":
                 await this.emitRequestAccounts(driver, handle);
                 break;
-            case "signEthereumTransaction":
-                // TODO: differentiate between sign/send
+            case "/sign-transaction":
+                await this.emitSignTransaction(driver, handle);
+                break;
+            case "/send-transaction":
                 await this.emitSendTransaction(driver, handle);
                 break;
             case "signEthereumMessage":
@@ -531,10 +571,36 @@ export class TahoGlue extends Glue {
         });
     }
 
-    // TODO: Remove eslint comment after implementing.
-    // eslint-disable-next-line @typescript-eslint/require-await
-    override async signTransaction(_action: SignTransaction): Promise<void> {
-        throw new Error("cb - signTransaction not implemented");
+    override async signTransaction(action: SignTransaction): Promise<void> {
+        const cb = await this.driver;
+        await cb.lock(async (driver) => {
+            const current = await driver.getWindowHandle();
+            try {
+                await driver.switchTo().window(action.id);
+                let testid: string;
+
+                switch (action.action) {
+                    case "approve":
+                        testid = "sign";
+                        break;
+                    case "reject":
+                        testid = "reject";
+                        break;
+                    default:
+                        throw new Error(
+                            `unsupported action ${action as string}`,
+                        );
+                }
+
+                const btn = await driver.findElement(
+                    By.css(`#${testid}:not(.disabled)`),
+                );
+                await driver.wait(until.elementIsVisible(btn), 2000);
+                await btn.click();
+            } finally {
+                await driver.switchTo().window(current);
+            }
+        });
     }
 
     // TODO: Remove eslint comment after implementing.
