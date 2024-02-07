@@ -231,10 +231,21 @@ class TahoDriver {
                 await this.emitRequestAccounts(driver, handle);
                 break;
             case "/sign-transaction":
-                await this.emitSignTransaction(driver, handle);
-                break;
-            case "/send-transaction":
-                await this.emitSendTransaction(driver, handle);
+                const sections = await driver.findElements(
+                    By.css(`[data-broadcast-on-sign]`),
+                );
+                if (sections.length === 0) {
+                    break;
+                }
+                const section = sections[0];
+                const broadcastOnSign = await section.getAttribute(
+                    "data-broadcast-on-sign",
+                );
+                if (broadcastOnSign === "true") {
+                    await this.emitSendTransaction(driver, handle);
+                } else {
+                    await this.emitSignTransaction(driver, handle);
+                }
                 break;
             case "signEthereumMessage":
                 await this.emitSignMessage(driver, handle);
@@ -271,12 +282,8 @@ class TahoDriver {
                     try {
                         await this.processNewWindow(driver, one);
                     } catch (e) {
-                        if (e instanceof NoSuchWindowError) {
-                            console.debug("Window", one, "disappeared");
-                            continue;
-                        } else {
-                            throw e;
-                        }
+                        console.debug("Window", one, "disappeared");
+                        continue;
                     }
                 }
             } finally {
