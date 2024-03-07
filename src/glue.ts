@@ -1,3 +1,4 @@
+import { logger } from "./logger.js";
 import { parseUnits } from "./units.js";
 import {
     ActivateChain,
@@ -38,24 +39,24 @@ class Lock<T> {
 
     public lock<R>(callback: (data: T) => Promise<R>): Promise<R> {
         if (this.locked) {
-            console.debug("Queuing");
+            logger.debug("Queuing");
             return new Promise<R>((res, rej) => {
                 this.queue.push(() => callback(this.data).then(res).catch(rej));
             });
         }
 
-        console.debug("Locking");
+        logger.debug("Locking");
         this.locked = true;
         return callback(this.data).finally(() => this.after());
     }
 
     private after() {
         if (0 === this.queue.length) {
-            console.debug("Unlocking");
+            logger.debug("Unlocking");
             this.locked = false;
         } else {
             const item = this.queue.shift();
-            console.debug("Running task", item);
+            logger.debug("Running task", item);
             if (typeof item === "undefined") {
                 throw new Error("lock queue empty");
             }
@@ -112,7 +113,7 @@ class TahoDriver {
         driver: WebDriver,
         handle: string,
     ): Promise<void> {
-        console.debug("emitting requestaccounts");
+        logger.debug("emitting requestaccounts");
         await this.unlockWithPassword(driver);
 
         this.glue.emit(
@@ -127,7 +128,7 @@ class TahoDriver {
         driver: WebDriver,
         handle: string,
     ): Promise<void> {
-        console.debug("emitting sendtransaction");
+        logger.debug("emitting sendtransaction");
         await this.unlockWithPassword(driver);
 
         const addressDetails = await driver.findElement(
@@ -161,7 +162,7 @@ class TahoDriver {
         driver: WebDriver,
         handle: string,
     ): Promise<void> {
-        console.debug("emitting signtransaction");
+        logger.debug("emitting signtransaction");
         await this.unlockWithPassword(driver);
 
         const addressDetails = await driver.findElement(
@@ -195,7 +196,7 @@ class TahoDriver {
         driver: WebDriver,
         handle: string,
     ): Promise<void> {
-        console.debug("emitting signmessage");
+        logger.debug("emitting signmessage");
         await this.unlockWithPassword(driver);
 
         const messageContent = await driver.findElement(
@@ -215,7 +216,7 @@ class TahoDriver {
         driver: WebDriver,
         handle: string,
     ): Promise<void> {
-        console.debug("Processing window", handle);
+        logger.debug("Processing window", handle);
         await driver.switchTo().window(handle);
 
         const location = await driver.getCurrentUrl();
@@ -251,7 +252,7 @@ class TahoDriver {
                 break;
             default:
                 title = await driver.getTitle();
-                console.warn(
+                logger.warn(
                     "unknown event from window",
                     title,
                     "@",
@@ -281,7 +282,7 @@ class TahoDriver {
                     try {
                         await this.processNewWindow(driver, one);
                     } catch (e) {
-                        console.debug("Window", one, "disappeared");
+                        logger.debug("Window", one, "disappeared");
                         continue;
                     }
                 }
@@ -304,7 +305,7 @@ class TahoDriver {
             previous = next;
 
             if (created.length > 0) {
-                console.debug("Found windows", created);
+                logger.debug("Found windows", created);
                 this.newWindows.push(...created);
                 await this.processNewWindows();
             }

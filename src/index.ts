@@ -1,4 +1,5 @@
 import { TahoGlue } from "./glue.js";
+import { logger } from "./logger.js";
 import serveGlue, { ServeResult } from "@wallet-test-framework/glue-ws";
 import meow from "meow";
 import * as process from "node:process";
@@ -59,7 +60,7 @@ export async function main(args: string[]): Promise<void> {
 
 export function mainSync(args: string[]): void {
     main(args).catch((e) => {
-        console.error(e);
+        logger.error(e);
         process.exit(1);
     });
 }
