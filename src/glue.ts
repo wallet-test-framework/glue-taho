@@ -13,12 +13,9 @@ import {
     SignTransactionEvent,
     SwitchEthereumChain,
 } from "@wallet-test-framework/glue";
-import { send } from "node:process";
 import { URL } from "node:url";
 import { Builder, By, WebDriver, until } from "selenium-webdriver";
 import Chrome from "selenium-webdriver/chrome.js";
-import { sendRequest } from "selenium-webdriver/http.js";
-import { NoSuchWindowError } from "selenium-webdriver/lib/error.js";
 
 function delay(ms: number): Promise<void> {
     return new Promise((res) => setTimeout(res, ms));
@@ -107,7 +104,7 @@ class TahoDriver {
         return new TahoDriver(driver, glue);
     }
 
-    public async unlockWithPassword(driver: WebDriver): Promise<void> {
+    public async unlockWithPassword(_driver: WebDriver): Promise<void> {
         //TODO: type password if wallet is locked
     }
 
@@ -231,20 +228,22 @@ class TahoDriver {
                 await this.emitRequestAccounts(driver, handle);
                 break;
             case "/sign-transaction":
-                const sections = await driver.findElements(
-                    By.css(`[data-broadcast-on-sign]`),
-                );
-                if (sections.length === 0) {
-                    break;
-                }
-                const section = sections[0];
-                const broadcastOnSign = await section.getAttribute(
-                    "data-broadcast-on-sign",
-                );
-                if (broadcastOnSign === "true") {
-                    await this.emitSendTransaction(driver, handle);
-                } else {
-                    await this.emitSignTransaction(driver, handle);
+                {
+                    const sections = await driver.findElements(
+                        By.css(`[data-broadcast-on-sign]`),
+                    );
+                    if (sections.length === 0) {
+                        break;
+                    }
+                    const section = sections[0];
+                    const broadcastOnSign = await section.getAttribute(
+                        "data-broadcast-on-sign",
+                    );
+                    if (broadcastOnSign === "true") {
+                        await this.emitSendTransaction(driver, handle);
+                    } else {
+                        await this.emitSignTransaction(driver, handle);
+                    }
                 }
                 break;
             case "signEthereumMessage":
