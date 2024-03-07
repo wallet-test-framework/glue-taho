@@ -4,6 +4,7 @@ import {
     ActivateChain,
     EventMap,
     Glue,
+    Report,
     RequestAccounts,
     RequestAccountsEvent,
     SendTransaction,
@@ -388,6 +389,13 @@ class TahoDriver {
             await driver.switchTo().window(handles[0]);
         });
     }
+
+    async stop(): Promise<void> {
+        this.running = false;
+        await this.driver.lock(async (driver) => {
+            await driver.quit();
+        });
+    }
 }
 
 export class TahoGlue extends Glue {
@@ -406,6 +414,8 @@ export class TahoGlue extends Glue {
     }
 
     private readonly driver;
+    public readonly reportReady: Promise<Report>;
+    private readonly resolveReport: (report: Report) => unknown;
 
     constructor(
         extensionPath: string,
@@ -413,6 +423,17 @@ export class TahoGlue extends Glue {
     ) {
         super();
         this.driver = TahoGlue.buildDriver(this, extensionPath, browserVersion);
+
+        let resolveReport;
+        this.reportReady = new Promise((res) => {
+            resolveReport = res;
+        });
+
+        if (!resolveReport) {
+            throw new Error("Promise didn't assign resolve function");
+        }
+
+        this.resolveReport = resolveReport;
     }
 
     async launch(url: string): Promise<void> {
@@ -616,6 +637,12 @@ export class TahoGlue extends Glue {
         _action: SwitchEthereumChain,
     ): Promise<void> {
         throw new Error("cb - switchEthereumChain not implemented");
+    }
+
+    // eslint-disable-next-line @typescript-eslint/require-await
+    override async report(action: Report): Promise<void> {
+        await (await this.driver).stop();
+        this.resolveReport(action);
     }
 
     public emit<E extends keyof EventMap>(

@@ -52,7 +52,13 @@ export async function main(args: string[]): Promise<void> {
 
     try {
         await serve(cli.flags.testUrl, implementation, serveResult);
-        await new Promise((r) => setTimeout(r, 600000)); // TODO
+        const report = await implementation.reportReady;
+
+        if (typeof report.value !== "string") {
+            throw new Error("unsupported report type");
+        }
+
+        process.stdout.write(report.value);
     } finally {
         await serveResult.close();
     }
